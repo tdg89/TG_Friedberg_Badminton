@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lagerkisten</title>
+<meta name="description" content="Inhalt der Lagerkisten anzeigen und durchsuchen">
+<meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f141a" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lagerkisten">
+<style>
+  :root{
+    --bg:#eef1f5; --karte:#ffffff; --text:#1c2430; --leise:#6b7685;
+    --linie:#e3e7ec; --akzent:#1f4e79; --akzent2:#2f6aa3;
+    --menge-bg:#e8f0f8; --menge-text:#1f4e79; --mark:#ffe58a; --treffer:#fff6d6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f141a; --karte:#18202a; --text:#e6ebf1; --leise:#93a0b0;
+      --linie:#26313d; --akzent:#1d3f60; --akzent2:#2a5884;
+      --menge-bg:#22344a; --menge-text:#a9cbef; --mark:#6b5a12; --treffer:#3a3214;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:0 16px 24px;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+
+  /* Obere Leiste: Suche + Kistenauswahl */
+  .leiste{position:sticky;top:0;z-index:10;max-width:560px;margin:0 auto;padding:12px 0;background:var(--bg)}
+  .suchfeld{position:relative}
+  .suchfeld svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);
+    width:18px;height:18px;color:var(--leise);pointer-events:none}
+  .suchfeld input{width:100%;height:46px;font-size:16px;border-radius:12px;
+    border:1px solid var(--linie);background:var(--karte);color:var(--text)}
+  .suchfeld input{padding:0 14px 0 38px}
+  .suchfeld input:focus{outline:2px solid var(--akzent2);outline-offset:1px}
+
+  /* Vorschlagsliste */
+  .vorschlaege{position:absolute;left:0;right:0;top:calc(100% + 6px);margin:0;padding:6px;list-style:none;
+    background:var(--karte);border:1px solid var(--linie);border-radius:14px;
+    box-shadow:0 12px 32px rgba(0,0,0,.16);max-height:62vh;overflow:auto}
+  .vorschlaege[hidden]{display:none}
+  .vorschlag{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;cursor:pointer}
+  .vorschlag.aktiv,.vorschlag:hover{background:var(--menge-bg)}
+  .v-text{display:flex;flex-direction:column;min-width:0}
+  .v-haupt{font-size:16px;line-height:1.3}
+  .v-ort{font-size:13px;color:var(--leise);margin-top:2px}
+  .v-ort b{color:var(--text);font-weight:600}
+  .v-leer{padding:14px 10px;color:var(--leise);font-size:15px}
+  mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
+
+  /* Karte */
+  .karte{max-width:560px;margin:0 auto;background:var(--karte);border-radius:18px;
+    overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.08)}
+  .kopf{padding:24px 24px 20px;color:#fff;
+    background:linear-gradient(135deg,var(--akzent),var(--akzent2))}
+  .kopf--leer{background:linear-gradient(135deg,#5b6573,#7a8594)}
+  .label{font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.8}
+  h1{margin:4px 0 0;font-size:40px;line-height:1.1;font-weight:700}
+  .bez{display:inline-block;margin-top:12px;padding:5px 12px;border-radius:999px;
+    background:rgba(255,255,255,.18);font-size:15px;font-weight:600}
+  .meta{margin-top:10px;font-size:14px;opacity:.85}
+  .inhalt{padding:20px 24px 8px}
+  h2{margin:0 0 8px;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--leise)}
+  .liste{list-style:none;margin:0;padding:0}
+  .liste li{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--linie)}
+  .liste li:last-child{border-bottom:none}
+  .liste li.treffer{margin:0 -12px;padding:12px;border-radius:12px;background:var(--treffer);
+    border-bottom-color:transparent;animation:blink 1.2s ease 2}
+  @keyframes blink{50%{background:var(--mark)}}
+  .liste a{display:flex;align-items:center;gap:14px;width:100%;color:inherit;text-decoration:none}
+  .menge{flex:0 0 auto;min-width:44px;padding:6px 8px;border-radius:10px;text-align:center;
+    background:var(--menge-bg);color:var(--menge-text);font-weight:700;font-size:15px;
+    font-variant-numeric:tabular-nums}
+  .menge--leer{visibility:hidden}
+  /* Titel als Kistenauswahl */
+  .wahl{position:relative;display:flex;width:fit-content;max-width:100%;align-items:center;gap:12px;margin-top:4px;border-radius:12px}
+  .wahl h1{margin:0}
+  .wahl .chev{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
+    background:rgba(255,255,255,.2);transition:background .15s}
+  .wahl:hover .chev,.wahl:focus-within .chev{background:rgba(255,255,255,.34)}
+  .wahl:focus-within{outline:2px solid rgba(255,255,255,.7);outline-offset:6px}
+  .wahl select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
+  .wahl select option{color:#1c2430;background:#fff}
+  .menge--kiste{background:var(--akzent2);color:#fff}
+  .artikel{font-size:17px;line-height:1.35;min-width:0}
+  .artikel small{display:block;font-size:13px;color:var(--leise);margin-top:2px}
+  .pfeil{margin-left:auto;color:var(--leise);font-size:22px}
+  .hinweis{padding:14px 16px;border-radius:12px;background:var(--bg);color:var(--leise);font-size:15px}
+  .laden{padding:40px 24px;text-align:center;color:var(--leise)}
+  .spinner{width:28px;height:28px;margin:0 auto 12px;border:3px solid var(--linie);
+    border-top-color:var(--akzent2);border-radius:50%;animation:dreh .8s linear infinite}
+  @keyframes dreh{to{transform:rotate(360deg)}}
+
+  /* Navigation unten */
+  .nav{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin:12px 24px 0;padding:16px 0 20px;border-top:1px solid var(--linie)}
+  .nav a{color:var(--akzent2);text-decoration:none;font-size:15px;font-weight:600}
+  .nav .mitte{color:var(--leise);font-weight:500}
+  .nav .aus{visibility:hidden}
+
+  /* App installieren */
+  .install{max-width:560px;margin:14px auto 0;text-align:center}
+  .install[hidden]{display:none}
+  .install button{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;font-size:15px;font-weight:600;
+    border:1px solid var(--linie);border-radius:999px;background:var(--karte);color:var(--akzent2);cursor:pointer}
+  .install button:hover{border-color:var(--akzent2)}
+  /* Als installierte App: etwas Abstand zur Fensterkante */
+  @media (display-mode: standalone){ .leiste{padding-top:14px} }
+</style>
+</head>
+<body>
+
+<header class="leiste">
+  <div class="suchfeld">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="q" type="search" placeholder="Was suchst du? z. B. Weingläser" autocomplete="off"
+      role="combobox" aria-expanded="false" aria-controls="vorschlaege" aria-autocomplete="list">
+    <ul class="vorschlaege" id="vorschlaege" role="listbox" hidden></ul>
+  </div>
+</header>
+
+<main class="karte" id="app">
+  <div class="laden"><div class="spinner"></div>Wird geladen …</div>
+</main>
+
+<div class="install" id="install" hidden>
+  <button type="button">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+    Als App installieren
+  </button>
+</div>
+
+<script>
+  // ▼▼▼ HIER die Web-App-URL aus Apps Script eintragen (endet auf /exec) ▼▼▼
+  const API_URL = 'HIER_DIE_EXEC_URL_EINFUEGEN';
+  // ▲▲▲
+
+  const CACHE_KEY = 'kisten-cache-v2';
+  let KISTEN = [];
+  let INDEX = [];
+
+  const $ = id => document.getElementById(id);
+  const app = $('app'), q = $('q'), vorschlaege = $('vorschlaege');
+
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const norm = s => String(s ?? '').toLowerCase().replace(/ß/g, 'ss')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const gross = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  const anzeigeName = k => k.nr ? 'Kiste ' + k.nr : gross(k.name);
+  const zeigeBez = k => k.bezeichnung && norm(k.bezeichnung) !== norm(k.name);
+
+  function positionen(inhalt) {
+    return String(inhalt || '').split(',').map(t => t.trim()).filter(Boolean).map(t => {
+      const d = t.match(/^(?:div\.|diverse\s)\s*(.+)$/i);
+      if (d) return { menge: 'div.', text: d[1] };
+      const m = t.match(/^(\d+(?:[.,]\d+)?)\s*(?:x\s+)?(.+)$/i);
+      return m ? { menge: m[1], text: m[2] } : { menge: '', text: t };
+    });
+  }
+
+  /* ---------- Daten ---------- */
+  function datenSetzen(liste) {
+    KISTEN = (liste || []).map(k => ({
+      id: k.id || k.nr || '', nr: k.nr || '', name: k.name || '',
+      bezeichnung: k.bezeichnung || '', inhalt: k.inhalt || '',
+      pos: positionen(k.inhalt)
+    })).sort((a, b) => (a.nr === '' ? 1 : 0) - (b.nr === '' ? 1 : 0) || (+a.nr) - (+b.nr));
+
+    INDEX = [];
+    KISTEN.forEach(k => {
+      INDEX.push({ typ: 'kiste', k, such: norm(anzeigeName(k) + ' ' + k.bezeichnung) });
+      k.pos.forEach((p, i) => INDEX.push({ typ: 'pos', k, p, i, such: norm(p.text) }));
+    });
+
+  }
+
+  function finde(id) {
+    const nr = (String(id).match(/\d+/) || [])[0];
+    return nr ? KISTEN.find(k => k.nr === nr) : KISTEN.find(k => k.id === id);
+  }
+
+  /* ---------- Navigation ---------- */
+  function geheZu(id, treffer) {
+    let url = location.pathname;
+    if (id) url += '?id=' + encodeURIComponent(id) + (treffer != null ? '&t=' + treffer : '');
+    history.pushState(null, '', url);
+    render();
+    if (treffer == null) window.scrollTo(0, 0);
+  }
+  window.addEventListener('popstate', render);
+
+  app.addEventListener('change', ev => {
+    if (ev.target.matches('.wechsler')) geheZu(ev.target.value || '');
+  });
+
+  app.addEventListener('click', ev => {
+    const a = ev.target.closest('a[data-id]');
+    if (!a) return;
+    ev.preventDefault();
+    geheZu(a.dataset.id || '');
+  });
+
+  /* ---------- Anzeige ---------- */
+  function render() {
+    if (!KISTEN.length) return;
+    const p = new URLSearchParams(location.search);
+    const id = p.get('id') || '';
+    const t = p.get('t');
+
+    if (!id) return zeigeUebersicht();
+    const k = finde(id);
+    if (!k) return zeigeFehler('Nicht gefunden', `Zu „${esc(id)}“ wurde keine Kiste gefunden.`);
+    zeigeKiste(k, t != null ? +t : -1);
+  }
+
+  function wahl(titel, aktuellId) {
+    const opts = `<option value="">Alle Kisten (Übersicht)</option>` + KISTEN.map(k =>
+      `<option value="${esc(k.id)}"${k.id === aktuellId ? ' selected' : ''}>${esc(anzeigeName(k))}${zeigeBez(k) ? ' – ' + esc(k.bezeichnung) : ''}</option>`
+    ).join('');
+    return `<div class="wahl">
+        <h1>${titel}</h1>
+        <span class="chev" aria-hidden="true"><svg width="14" height="10" viewBox="0 0 12 8"><path d="M1 1l5 5 5-5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg></span>
+        <select class="wechsler" aria-label="Andere Kiste wählen">${opts}</select>
+      </div>`;
+  }
+
+  function zeigeFehler(titel, text) {
+    document.title = titel;
+    app.innerHTML = `
+      <section class="kopf kopf--leer">
+        <div class="label">Lagerkiste</div>
+        <h1>${esc(titel)}</h1>
+      </section>
+      <section class="inhalt"><div class="hinweis">${text}</div></section>
+      <nav class="nav"><span></span><a href="?" data-id="">Alle Kisten</a><span></span></nav>`;
+  }
+
+  function zeigeKiste(k, treffer) {
+    const liste = k.pos.length
+      ? `<ul class="liste">${k.pos.map((p, i) => `
+          <li${i === treffer ? ' class="treffer" id="treffer"' : ''}>
+            <span class="menge${p.menge ? '' : ' menge--leer'}">${esc(p.menge || '–')}</span>
+            <span class="artikel">${esc(p.text)}</span>
+          </li>`).join('')}</ul>`
+      : `<div class="hinweis">Für diese Kiste ist kein Inhalt eingetragen.</div>`;
+
+    const idx = KISTEN.indexOf(k);
+    const vor = KISTEN[idx - 1], nach = KISTEN[idx + 1];
+    const link = (x, txt, cls) => x
+      ? `<a href="?id=${encodeURIComponent(x.id)}" data-id="${esc(x.id)}">${txt}</a>`
+      : `<span class="${cls}">${txt}</span>`;
+
+    document.title = anzeigeName(k);
+    app.innerHTML = `
+      <section class="kopf">
+        <div class="label">${k.nr ? 'Lagerkiste' : 'Lagerort'}</div>
+        ${wahl(k.nr ? 'Nr. ' + esc(k.nr) : esc(gross(k.name)), k.id)}
+        ${zeigeBez(k) ? `<div class="bez">${esc(k.bezeichnung)}</div>` : ''}
+        <div class="meta">${k.pos.length} ${k.pos.length === 1 ? 'Position' : 'Positionen'}</div>
+      </section>
+      <section class="inhalt">
+        <h2>Inhalt</h2>
+        ${liste}
+      </section>
+      <nav class="nav">
+        ${vor ? link(vor, '‹ ' + esc(anzeigeName(vor))) : '<span class="aus">‹</span>'}
+        <a href="?" data-id="" class="mitte">Alle</a>
+        ${nach ? link(nach, esc(anzeigeName(nach)) + ' ›') : '<span class="aus">›</span>'}
+      </nav>`;
+
+    if (treffer >= 0) {
+      const el = $('treffer');
+      if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+    }
+  }
+
+  function zeigeUebersicht() {
+    const anzahlPos = KISTEN.reduce((s, k) => s + k.pos.length, 0);
+    document.title = 'Lagerkisten';
+    app.innerHTML = `
+      <section class="kopf">
+        <div class="label">Inventar</div>
+        ${wahl('Lagerkisten', '')}
+        <div class="meta">${KISTEN.length} Einträge · ${anzahlPos} Positionen</div>
+      </section>
+      <section class="inhalt">
+        <h2>Alle Kisten</h2>
+        <ul class="liste">${KISTEN.map(k => `
+          <li><a href="?id=${encodeURIComponent(k.id)}" data-id="${esc(k.id)}">
+            <span class="menge menge--kiste">${esc(k.nr || '–')}</span>
+            <span class="artikel">${esc(zeigeBez(k) ? k.bezeichnung : anzeigeName(k))}
+              <small>${k.nr ? '' : 'Ohne Kiste · '}${k.pos.length ? k.pos.length + (k.pos.length === 1 ? ' Position' : ' Positionen') : 'leer'}</small>
+            </span>
+            <span class="pfeil">›</span>
+          </a></li>`).join('')}
+        </ul>
+      </section>
+      <div style="height:16px"></div>`;
+  }
+
+  /* ---------- Suche mit Autovervollständigung ---------- */
+  let ergebnisse = [], aktiv = -1;
+
+  function hervorheben(text, tokens) {
+    if (!tokens.length) return esc(text);
+    const muster = tokens.map(t => t.split('').map(c =>
+      ({ a: '[aàáâä]', o: '[oòóôö]', u: '[uùúûü]', e: '[eèéê]' })[c] ||
+      c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('').replace(/ss/g, '(?:ss|ß)'));
+    const re = new RegExp('(' + muster.join('|') + ')', 'gi');
+    return text.split(re).map((teil, i) => i % 2 ? `<mark>${esc(teil)}</mark>` : esc(teil)).join('');
+  }
+
+  function suchen(eingabe) {
+    const roh = eingabe.trim();
+    const tokens = norm(roh).split(/\s+/).filter(Boolean);
+    if (!tokens.length) return { liste: [], tokens };
+    const nurZahl = /^\d+$/.test(roh);
+
+    const rang = e =>
+      (nurZahl && e.typ === 'kiste' && e.k.nr === roh ? -10 : 0) +
+      (e.such.startsWith(tokens[0]) || e.such.includes(' ' + tokens[0]) ? 0 : 2) +
+      (e.typ === 'kiste' ? 0 : 1);
+
+    const liste = INDEX
+      .filter(e => tokens.every(t => e.such.includes(t)))
+      .map((e, n) => ({ e, r: rang(e), n }))
+      .sort((a, b) => a.r - b.r || a.n - b.n)
+      .slice(0, 12)
+      .map(x => x.e);
+    return { liste, tokens };
+  }
+
+  function vorschlaegeZeigen() {
+    const { liste, tokens } = suchen(q.value);
+    ergebnisse = liste;
+    aktiv = liste.length ? 0 : -1;
+
+    if (!q.value.trim()) { schliessen(); return; }
+
+    vorschlaege.innerHTML = liste.length ? liste.map((e, i) => {
+      const k = e.k;
+      const ort = k.nr
+        ? `in <b>${esc(anzeigeName(k))}</b>${zeigeBez(k) ? ' · ' + esc(k.bezeichnung) : ''}`
+        : `<b>ohne Kiste</b> gelagert`;
+      return e.typ === 'kiste'
+        ? `<li class="vorschlag" role="option" data-i="${i}">
+             <span class="menge menge--kiste">${esc(k.nr || '–')}</span>
+             <span class="v-text">
+               <span class="v-haupt">${hervorheben(anzeigeName(k) + (zeigeBez(k) ? ' – ' + k.bezeichnung : ''), tokens)}</span>
+               <span class="v-ort">Kiste öffnen · ${k.pos.length} Positionen</span>
+             </span></li>`
+        : `<li class="vorschlag" role="option" data-i="${i}">
+             <span class="menge${e.p.menge ? '' : ' menge--leer'}">${esc(e.p.menge || '–')}</span>
+             <span class="v-text">
+               <span class="v-haupt">${hervorheben(e.p.text, tokens)}</span>
+               <span class="v-ort">${ort}</span>
+             </span></li>`;
+    }).join('') : `<li class="v-leer">Nichts gefunden für „${esc(q.value.trim())}“</li>`;
+
+    vorschlaege.hidden = false;
+    q.setAttribute('aria-expanded', 'true');
+    aktivMarkieren();
+  }
+
+  function aktivMarkieren() {
+    [...vorschlaege.querySelectorAll('.vorschlag')].forEach((li, i) => {
+      li.classList.toggle('aktiv', i === aktiv);
+      if (i === aktiv) li.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function schliessen() {
+    vorschlaege.hidden = true;
+    q.setAttribute('aria-expanded', 'false');
+  }
+
+  function waehlen(i) {
+    const e = ergebnisse[i];
+    if (!e) return;
+    schliessen();
+    q.value = '';
+    q.blur();
+    geheZu(e.k.id, e.typ === 'pos' ? e.i : null);
+  }
+
+  q.addEventListener('input', vorschlaegeZeigen);
+  q.addEventListener('focus', () => { if (q.value.trim()) vorschlaegeZeigen(); });
+  q.addEventListener('blur', () => setTimeout(schliessen, 150));
+  q.addEventListener('keydown', ev => {
+    if (ev.key === 'ArrowDown' && ergebnisse.length) { ev.preventDefault(); aktiv = (aktiv + 1) % ergebnisse.length; aktivMarkieren(); }
+    else if (ev.key === 'ArrowUp' && ergebnisse.length) { ev.preventDefault(); aktiv = (aktiv - 1 + ergebnisse.length) % ergebnisse.length; aktivMarkieren(); }
+    else if (ev.key === 'Enter') { ev.preventDefault(); waehlen(aktiv >= 0 ? aktiv : 0); }
+    else if (ev.key === 'Escape') { schliessen(); }
+  });
+  vorschlaege.addEventListener('mousedown', ev => {
+    const li = ev.target.closest('.vorschlag');
+    if (li) { ev.preventDefault(); waehlen(+li.dataset.i); }
+  });
+
+  /* ---------- Laden (mit Zwischenspeicher für schnellen Start) ---------- */
+  let gespeichert = null;
+  try { gespeichert = localStorage.getItem(CACHE_KEY); } catch (e) {}
+  if (gespeichert) {
+    try { datenSetzen(JSON.parse(gespeichert)); render(); } catch (e) {}
+  }
+
+  fetch(API_URL)
+    .then(r => r.json())
+    .then(d => {
+      const roh = JSON.stringify(d.kisten || []);
+      if (roh !== gespeichert) {
+        datenSetzen(d.kisten || []);
+        render();
+        try { localStorage.setItem(CACHE_KEY, roh); } catch (e) {}
+      }
+    })
+    .catch(() => {
+      if (!KISTEN.length) zeigeFehler('Fehler', 'Die Daten konnten nicht geladen werden. Bitte später erneut versuchen.');
+    });
+
+  /* ---------- Installierbare App ---------- */
+  let installHinweis = null;
+  const installBox = $('install');
+  window.addEventListener('beforeinstallprompt', ev => {
+    ev.preventDefault();
+    installHinweis = ev;
+    installBox.hidden = false;
+  });
+  installBox.querySelector('button').addEventListener('click', async () => {
+    if (!installHinweis) return;
+    installHinweis.prompt();
+    await installHinweis.userChoice;
+    installHinweis = null;
+    installBox.hidden = true;
+  });
+  window.addEventListener('appinstalled', () => { installBox.hidden = true; });
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+</script>
+</body>
+</html>
