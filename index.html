@@ -137,7 +137,7 @@
 </div>
 
 <script>
-   const API_URL = 'https://script.google.com/macros/s/AKfycbyam64iGjYYMbtrb65W6EZJbrAU8ZiPhr8H0Je486y91dl6r-H-BoFGBaQazJSUOyyT/exec';
+  const API_URL = 'https://script.google.com/macros/s/AKfycbwdjMpO9hUHPuzVG1ngfO1WHoLOpR8JX1-BPFR8d5Z3ditrtTkthoO2vbu61qIHO0fxgw/exec';
 
   const CACHE_KEY = 'kisten-cache-v2';
   let KISTEN = [];
@@ -409,8 +409,21 @@
     try { datenSetzen(JSON.parse(gespeichert)); render(); } catch (e) {}
   }
 
-  fetch(API_URL)
-    .then(r => r.json())
+  // Daten per <script>-Tag laden (JSONP) – umgeht CORS-Sperren von Apps Script
+  function ladeDaten() {
+    return new Promise((resolve, reject) => {
+      const cb = 'kistenDaten_' + Date.now();
+      const s = document.createElement('script');
+      const timer = setTimeout(() => { fertig(); reject(new Error('Zeitüberschreitung')); }, 20000);
+      function fertig() { clearTimeout(timer); try { delete window[cb]; } catch (e) { window[cb] = undefined; } s.remove(); }
+      window[cb] = d => { fertig(); resolve(d); };
+      s.onerror = () => { fertig(); reject(new Error('Laden fehlgeschlagen')); };
+      s.src = API_URL + (API_URL.includes('?') ? '&' : '?') + 'callback=' + cb;
+      document.head.appendChild(s);
+    });
+  }
+
+  ladeDaten()
     .then(d => {
       const roh = JSON.stringify(d.kisten || []);
       if (roh !== gespeichert) {
